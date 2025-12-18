@@ -21,7 +21,7 @@ const showCreateFolderModal = ref(false)
 const showCreateFileModal = ref(false)
 
 // Auto-refresh interval (dalam milidetik)
-const REFRESH_INTERVAL = 3000 // 3 detik - bisa disesuaikan
+const REFRESH_INTERVAL = 3000 // 3 detik
 
 // Current folder query
 const { data: currentFolder } = useQuery({
@@ -34,16 +34,16 @@ const { data: currentFolder } = useQuery({
 const { data: folderContents, isLoading, refetch } = useQuery({
   queryKey: ['folder-contents', store.currentFolderId],
   queryFn: () => store.currentFolderId ? foldersService.getContents(store.currentFolderId) : null,
-  refetchInterval: REFRESH_INTERVAL,        // ← Auto refresh setiap 3 detik
-  refetchOnWindowFocus: true,               // ← Refresh saat kembali ke window
-  refetchIntervalInBackground: false,       // ← TIDAK refresh saat tab tidak aktif (hemat resource)
+  refetchInterval: REFRESH_INTERVAL,
+  refetchOnWindowFocus: true,
+  refetchIntervalInBackground: false,
 })
 
-// Folder tree juga auto-refresh (untuk sidebar)
+// Folder tree juga auto-refresh
 const { refetch: refetchTree } = useQuery({
   queryKey: ['folder-tree'],
   queryFn: () => foldersService.getTree(),
-  refetchInterval: REFRESH_INTERVAL,        // ← Auto refresh tree juga
+  refetchInterval: REFRESH_INTERVAL,
   refetchOnWindowFocus: true,
   refetchIntervalInBackground: false,
 })
@@ -68,8 +68,17 @@ const filteredFiles = computed(() => {
   )
 })
 
+// ← COMPUTED: Current path dan folder info
 const currentPath = computed(() => {
   return currentFolder.value?.data?.path || '/'
+})
+
+const currentFolderName = computed(() => {
+  return currentFolder.value?.data?.name || 'Root'
+})
+
+const currentParentId = computed(() => {
+  return store.currentFolderId
 })
 
 // Create folder mutation
@@ -80,10 +89,10 @@ const createFolderMutation = useMutation({
     queryClient.invalidateQueries({ queryKey: ['folder-contents'] })
     queryClient.invalidateQueries({ queryKey: ['folder-tree'] })
     showCreateFolderModal.value = false
-    alert('Folder created successfully!')
+    alert('✅ Folder created successfully in ' + currentFolderName.value + '!')
   },
   onError: (error: any) => {
-    alert(`Error creating folder: ${error.response?.data?.error || error.message}`)
+    alert(`❌ Error creating folder: ${error.response?.data?.error || error.message}`)
   },
 })
 
@@ -94,10 +103,10 @@ const createFileMutation = useMutation({
   onSuccess: () => {
     queryClient.invalidateQueries({ queryKey: ['folder-contents'] })
     showCreateFileModal.value = false
-    alert('File created successfully!')
+    alert('✅ File created successfully in ' + currentFolderName.value + '!')
   },
   onError: (error: any) => {
-    alert(`Error creating file: ${error.response?.data?.error || error.message}`)
+    alert(`❌ Error creating file: ${error.response?.data?.error || error.message}`)
   },
 })
 
@@ -116,32 +125,50 @@ const deleteMutation = useMutation({
     queryClient.invalidateQueries({ queryKey: ['folder-contents'] })
     queryClient.invalidateQueries({ queryKey: ['folder-tree'] })
     store.clearSelection()
-    alert('Items deleted successfully!')
+    alert('✅ Items deleted successfully!')
   },
   onError: (error: any) => {
-    alert(`Error deleting items: ${error.response?.data?.error || error.message}`)
+    alert(`❌ Error deleting items: ${error.response?.data?.error || error.message}`)
   },
 })
 
-// Handlers
+// ← HANDLER: Create folder di posisi aktif
 function handleCreateFolder(name: string) {
+  // Build path berdasarkan folder aktif
   const path = buildPath(currentPath.value, name)
+  
+  console.log('Creating folder:', {
+    name,
+    path,
+    parent_id: currentParentId.value,
+    current_location: currentFolderName.value
+  })
+  
   createFolderMutation.mutate({
     name,
     path,
-    parent_id: store.currentFolderId,
+    parent_id: currentParentId.value, // ← Otomatis masuk ke folder aktif
   })
 }
 
+// ← HANDLER: Create file di posisi aktif
 function handleCreateFile(name: string, extension: string, size: number) {
   const fullName = `${name}.${extension}`
+  // Build path berdasarkan folder aktif
   const path = buildPath(currentPath.value, fullName)
   const mimeType = getMimeType(extension)
+  
+  console.log('Creating file:', {
+    name: fullName,
+    path,
+    folder_id: currentParentId.value,
+    current_location: currentFolderName.value
+  })
   
   createFileMutation.mutate({
     name: fullName,
     path,
-    folder_id: store.currentFolderId,
+    folder_id: currentParentId.value, // ← Otomatis masuk ke folder aktif
     extension,
     size,
     mime_type: mimeType,
@@ -193,11 +220,16 @@ function handleNavigate(folderId: number | null) {
         @refresh="handleRefresh"
       />
 
-      <!-- Status Bar dengan Auto-Refresh Indicator -->
+      <!-- Status Bar dengan Location Info -->
       <div class="bg-gradient-to-r from-green-50 to-blue-50 px-4 py-2 text-xs border-b border-gray-200 flex items-center justify-between">
-        <span class="text-gray-700 font-medium">
-          📁 {{ filteredFolders.length }} folders · 📄 {{ filteredFiles.length }} files
-        </span>
+        <div class="flex items-center gap-4">
+          <span class="text-gray-700 font-medium">
+            📁 {{ filteredFolders.length }} folders · 📄 {{ filteredFiles.length }} files
+          </span>
+          <span class="text-blue-600 font-medium">
+            📍 Current: {{ currentFolderName }}
+          </span>
+        </div>
         <div class="flex items-center gap-2 text-green-600">
           <span class="relative flex h-2 w-2">
             <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
@@ -232,7 +264,7 @@ function handleNavigate(folderId: number | null) {
       />
     </div>
 
-    <!-- Modals -->
+    <!-- Modals dengan info lokasi -->
     <CreateFolderModal
       :show="showCreateFolderModal"
       :parent-path="currentPath"
