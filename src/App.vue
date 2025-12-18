@@ -20,6 +20,9 @@ const queryClient = useQueryClient()
 const showCreateFolderModal = ref(false)
 const showCreateFileModal = ref(false)
 
+// Auto-refresh interval (dalam milidetik)
+const REFRESH_INTERVAL = 3000 // 3 detik - bisa disesuaikan
+
 // Current folder query
 const { data: currentFolder } = useQuery({
   queryKey: ['folder', store.currentFolderId],
@@ -27,10 +30,22 @@ const { data: currentFolder } = useQuery({
   enabled: computed(() => store.currentFolderId !== null),
 })
 
-// Folder contents query
+// Folder contents query dengan AUTO-REFRESH
 const { data: folderContents, isLoading, refetch } = useQuery({
   queryKey: ['folder-contents', store.currentFolderId],
   queryFn: () => store.currentFolderId ? foldersService.getContents(store.currentFolderId) : null,
+  refetchInterval: REFRESH_INTERVAL,        // ← Auto refresh setiap 3 detik
+  refetchOnWindowFocus: true,               // ← Refresh saat kembali ke window
+  refetchIntervalInBackground: false,       // ← TIDAK refresh saat tab tidak aktif (hemat resource)
+})
+
+// Folder tree juga auto-refresh (untuk sidebar)
+const { refetch: refetchTree } = useQuery({
+  queryKey: ['folder-tree'],
+  queryFn: () => foldersService.getTree(),
+  refetchInterval: REFRESH_INTERVAL,        // ← Auto refresh tree juga
+  refetchOnWindowFocus: true,
+  refetchIntervalInBackground: false,
 })
 
 // Filtered items based on search
@@ -155,6 +170,7 @@ function handleDeleteSelected() {
 
 function handleRefresh() {
   refetch()
+  refetchTree()
 }
 
 function handleNavigate(folderId: number | null) {
@@ -176,6 +192,20 @@ function handleNavigate(folderId: number | null) {
         @delete-selected="handleDeleteSelected"
         @refresh="handleRefresh"
       />
+
+      <!-- Status Bar dengan Auto-Refresh Indicator -->
+      <div class="bg-gradient-to-r from-green-50 to-blue-50 px-4 py-2 text-xs border-b border-gray-200 flex items-center justify-between">
+        <span class="text-gray-700 font-medium">
+          📁 {{ filteredFolders.length }} folders · 📄 {{ filteredFiles.length }} files
+        </span>
+        <div class="flex items-center gap-2 text-green-600">
+          <span class="relative flex h-2 w-2">
+            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+            <span class="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+          </span>
+          <span class="font-medium">Auto-refresh Active</span>
+        </div>
+      </div>
 
       <!-- Breadcrumb -->
       <Breadcrumb
